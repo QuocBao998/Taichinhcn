@@ -1,0 +1,22 @@
+@@ -107,7 +107,17 @@
+                     <button class="icon-btn theme-toggle" id="theme-toggle" title="Chuyển chế độ Sáng/Tối">
+                         <i data-lucide="moon"></i>
+                     </button>
+-                    <button class="icon-btn bell-btn">
+-                        <i data-lucide="bell"></i>
+-                        <span class="notification-dot"></span>
+-                    </button>
++                    
++                    <div style="position: relative;">
++                        <button class="icon-btn bell-btn" onclick="toggleNotifications()">
++                            <i data-lucide="bell"></i>
++                            <span class="notification-dot"></span>
++                        </button>
++                        <div id="notiDropdown" class="noti-dropdown" style="display:none; position:absolute; right:0; top:50px; width:300px; background:var(--card-bg); box-shadow:var(--shadow-md); border-radius:var(--radius-md); padding:16px; border:1px solid var(--border-color); z-index: 100;">
++                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
++                                <h4 data-i18n="noti_title" style="margin:0; font-size: 1rem; color: var(--text-primary);">Thông báo</h4>
++                            </div>
++                            <div id="notiList" style="max-height: 250px; overflow-y: auto; font-size: 0.85rem; color: var(--text-secondary);">
++                                <!-- JS -->
++                            </div>
++                        </div>

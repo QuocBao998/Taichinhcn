@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MyLife - Quản Trị Tài Chính</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="light">
+    
+    <!-- Login Screen -->
+    <div class="login-overlay active" id="loginScreen">
+        <div class="login-box">
+            <div class="login-logo">
+                <div class="logo-icon" style="margin: 0 auto 16px;"><i data-lucide="layout-grid"></i></div>
+                <h2 data-i18n="app_title">MyLife</h2>
+                <p data-i18n="app_subtitle">TRUNG TÂM NĂNG SUẤT</p>
+            </div>
+            
+            <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+                <h3 id="loginPromptTitle" style="text-align: center; margin-bottom: 24px; color: var(--text-primary);" data-i18n="login_title">Đăng nhập</h3>
+                <div class="form-group" id="nameSetupGroup" style="display: none;">
+                    <label for="setupName" data-i18n="your_name">Tên của bạn</label>
+                    <input type="text" id="setupName" placeholder="Ví dụ: Anh Bảo">
+                </div>
+                <div class="form-group">
+                    <label for="loginPassword" id="passwordLabel" data-i18n="password">Mật khẩu</label>
+                    <input type="password" id="loginPassword" required placeholder="***">
+                </div>
+                <p id="loginError" style="color: var(--danger); font-size: 0.85rem; text-align: center; margin-bottom: 16px; display: none;" data-i18n="pass_wrong">Mật khẩu không chính xác!</p>
+                <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
+                    <span data-i18n="login_btn">Truy cập ứng dụng</span> <i data-lucide="arrow-right"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div class="dashboard" id="mainDashboard" style="display: none;">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-top">
+                <div class="logo">
+                    <div class="logo-icon"><i data-lucide="layout-grid"></i></div>
+                    <div class="logo-text">
+                        <h2 data-i18n="app_title">MyLife</h2>
+                        <p data-i18n="app_subtitle">TRUNG TÂM NĂNG SUẤT</p>
+                    </div>
+                </div>
+
+                <nav class="main-nav">
+                    <ul>
+                        <li class="active"><a href="#" onclick="switchTab('overview')"><i data-lucide="layout-dashboard"></i> <span data-i18n="nav_overview">Tổng quan</span></a></li>
+                        <li><a href="#" onclick="switchTab('income')"><i data-lucide="trending-up"></i> <span data-i18n="nav_income">Thu nhập</span></a></li>
+                        <li><a href="#" onclick="switchTab('expense')"><i data-lucide="trending-down"></i> <span data-i18n="nav_expense">Chi tiêu</span></a></li>
+                        <li><a href="#" onclick="switchTab('report')"><i data-lucide="pie-chart"></i> <span data-i18n="nav_report">Báo cáo</span></a></li>
+                        <li><a href="#" onclick="switchTab('settings')"><i data-lucide="settings"></i> <span data-i18n="nav_settings">Cài đặt</span></a></li>
+                    </ul>
+                </nav>
+            </div>
+
+            <div class="sidebar-bottom">
+                <div class="status-widget mb-4">
+                    <span class="status-label" data-i18n="status">TRẠNG THÁI</span>
+                    <div class="status-indicator">
+                        <span class="dot-green"></span>
+                        <span class="status-text" data-i18n="status_active">Đang hoạt động</span>
+                    </div>
+                    <div id="weatherWidget" class="weather-widget">
+                        <i data-lucide="loader"></i> <span data-i18n="loading_weather">Đang tải vị trí...</span>
+                    </div>
+                </div>
+                <button class="btn-danger outline" onclick="logoutSession()" style="width: 100%; border: none; font-weight: 600; font-size: 0.9rem; padding: 12px; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <i data-lucide="log-out"></i> <span data-i18n="logout">Đăng xuất</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="greeting">
+                    <h1 id="greeting-title">Chào buổi sáng, User <span class="wave">👋</span></h1>
+                    <p id="greeting-date">HÔM NAY DATE</p>
+                </div>
+                
+                <div class="header-actions">
+                    <div class="search-box">
+                        <i data-lucide="search"></i>
+                        <input type="text" id="searchInput" placeholder="Tìm kiếm...">
+                    </div>
+                    <button class="icon-btn" id="lang-toggle" title="Change Language">
+                        <span id="langLabel" style="font-size: 0.8rem; font-weight: 700;">VN</span>
+                    </button>
+                    <button class="icon-btn theme-toggle" id="theme-toggle" title="Chuyển chế độ Sáng/Tối">
+                        <i data-lucide="moon"></i>
+                    </button>
+                    <button class="icon-btn bell-btn">
+                        <i data-lucide="bell"></i>
+                        <span class="notification-dot"></span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- TỔNG QUAN TAB -->
+            <section id="overview" class="tab-content active">
+                <div id="globalBudgetAlert" class="budget-alert" style="display: none;">
+                    <i data-lucide="alert-triangle"></i>
+                    <div class="alert-content">
+                        <strong data-i18n="warning">Cảnh báo:</strong> <span id="budgetAlertText">Bạn đã vượt hạn mức chi tiêu tháng này!</span>
+                    </div>
+                </div>
+
+                <div class="overview-cards">
+                    <!-- THẺ TỔNG CÒN LẠI (FULL WIDTH) -->
+                    <div class="overview-card balance-card">
+                        <div class="card-header-flex" style="justify-content: center; margin-bottom: 8px;">
+                            <h3 style="color: white; font-weight: 500; font-size: 1.1rem; opacity: 0.9;" data-i18n="total_balance">Tổng Còn Lại</h3>
+                        </div>
+                        <h2 id="summary-balance" class="big-amount" style="color: white; font-size: 3rem; text-align: center;">0</h2>
+                    </div>
+
+                    <!-- THU NHẬP -->
+                    <div class="overview-card income-card">
+                        <div class="card-header-flex">
+                            <h3 style="color: var(--success); border-left: 3px solid var(--success); padding-left: 8px;" data-i18n="total_income">Tổng Thu Nhập</h3>
+                            <div class="arrow-icon" style="color: var(--success); background: var(--success-bg);"><i data-lucide="arrow-up-right"></i></div>
+                        </div>
+                        <h2 id="summary-income" class="big-amount">0</h2>
+                        
+                        <div class="period-filters">
+                            <button class="pill-btn active" data-target="income" data-period="month" onclick="setFilterPeriod('income', 'month')" data-i18n="pd_month">Tháng này</button>
+                            <button class="pill-btn" data-target="income" data-period="year" onclick="setFilterPeriod('income', 'year')" data-i18n="pd_year">Năm</button>
+                            <button class="pill-btn" data-target="income" data-period="day" onclick="setFilterPeriod('income', 'day')" data-i18n="pd_day">Ngày</button>
+                        </div>
+                    </div>
+                    
+                    <!-- CHI TIÊU -->
+                    <div class="overview-card expense-card">
+                        <div class="card-header-flex">
+                            <h3 style="color: var(--danger); border-left: 3px solid var(--danger); padding-left: 8px;" data-i18n="total_expense">Tổng Chi Tiêu</h3>
+                            <div class="arrow-icon" style="color: var(--danger); background: var(--danger-bg);"><i data-lucide="arrow-down-right"></i></div>
+                        </div>
+                        <h2 id="summary-expense" class="big-amount">0</h2>
+                        
+                        <div class="period-filters">
+                            <button class="pill-btn active" data-target="expense" data-period="month" onclick="setFilterPeriod('expense', 'month')" data-i18n="pd_month">Tháng này</button>
+                            <button class="pill-btn" data-target="expense" data-period="year" onclick="setFilterPeriod('expense', 'year')" data-i18n="pd_year">Năm</button>
+                            <button class="pill-btn" data-target="expense" data-period="day" onclick="setFilterPeriod('expense', 'day')" data-i18n="pd_day">Ngày</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="recent-list-container">
+                    <div class="flex-between" style="margin-bottom: 24px;">
+                        <h3 class="section-title" data-i18n="recent_tx">Giao dịch gần đây</h3>
+                        <a href="#" class="view-all" onclick="switchTab('income')" data-i18n="view_all">Xem tất cả</a>
+                    </div>
+                    <div class="recent-transactions" id="recent-transactions"></div>
+                </div>
+            </section>
+
+            <!-- THU NHẬP TAB -->
+            <section id="income" class="tab-content" style="display: none;">
+                <div class="flex-between mb-4">
+                    <h2 class="page-title"><i data-lucide="trending-up" style="color: var(--success);"></i> <span data-i18n="all_income">Tất cả Thu Nhập</span></h2>
+                    <button class="btn-primary" onclick="openModal('income')"><i data-lucide="plus"></i> <span data-i18n="add_income">Thêm thu nhập</span></button>
+                </div>
+                <div class="transaction-list full-list" id="income-list"></div>
+            </section>
+
+            <!-- CHI TIÊU TAB -->
+            <section id="expense" class="tab-content" style="display: none;">
+                <div class="flex-between mb-4">
+                    <h2 class="page-title"><i data-lucide="trending-down" style="color: var(--danger);"></i> <span data-i18n="all_expense">Tất cả Chi Tiêu</span></h2>
+                    <button class="btn-primary" onclick="openModal('expense')"><i data-lucide="plus"></i> <span data-i18n="add_expense">Thêm chi tiêu</span></button>
+                </div>
+                <div class="transaction-list full-list" id="expense-list"></div>
+            </section>
+
+            <!-- BÁO CÁO TAB -->
+            <section id="report" class="tab-content" style="display: none;">
+                <div class="report-header">
+                    <div class="report-icon-bg"><i data-lucide="pie-chart"></i></div>
+                    <div>
+                        <h2 data-i18n="nav_report">Báo cáo Tài chính</h2>
+                        <p data-i18n="report_desc">Phân tích chi tiết thu chi của bạn</p>
+                    </div>
+                </div>
+
+                <div id="advisorBlock" class="advisor-block" style="display: none;">
+                    <div class="advisor-title">
+                        <i data-lucide="bot"></i> <span data-i18n="advisor">Cố vấn Tài chính</span>
+                    </div>
+                    <p id="advisorMessage">Thông điệp</p>
+                </div>
+                
+                <div class="report-grid mt-3">
+                    <div class="report-section">
+                        <div class="report-section-header">
+                            <h3 style="border-left: 3px solid var(--success); padding-left: 8px; color: var(--success);" data-i18n="income_dist">Phân bổ Thu Nhập</h3>
+                        </div>
+                        <div class="report-body">
+                            <div class="chart-wrapper"><canvas id="incomeChart"></canvas></div>
+                            <div class="details-list" id="income-details"></div>
+                        </div>
+                    </div>
+                    <div class="report-section">
+                        <div class="report-section-header">
+                            <h3 style="border-left: 3px solid var(--danger); padding-left: 8px; color: var(--danger);" data-i18n="expense_dist">Phân bổ Chi Tiêu</h3>
+                        </div>
+                        <div class="report-body">
+                            <div class="chart-wrapper"><canvas id="expenseChart"></canvas></div>
+                            <div class="details-list" id="expense-details"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- CÀI ĐẶT TAB TÁI CẤU TRÚC (V6) -->
+            <section id="settings" class="tab-content" style="display: none;">
+                <div class="report-header mb-4">
+                    <div class="report-icon-bg" style="background: var(--border-color); color: var(--text-primary);"><i data-lucide="settings"></i></div>
+                    <div>
+                        <h2 data-i18n="nav_settings">Cài đặt ứng dụng</h2>
+                        <p data-i18n="settings_desc">Quản lý tài khoản, mật khẩu và tính năng</p>
+                    </div>
+                </div>
+
+                <div class="settings-grid" style="display: grid; grid-template-columns: 1fr; max-width: 680px; gap: 24px; padding-bottom: 60px;">
+                    <form id="settingsForm" onsubmit="saveSettings(event)" style="display: contents;">
+                        
+                        <!-- 1. GIAO DIỆN -->
+                        <div class="settings-block">
+                            <div class="sb-header"><i data-lucide="palette"></i> <span data-i18n="st_interface">Giao diện</span></div>
+                            <div class="sb-content">
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="st_theme_standard">Tiêu chuẩn</div>
+                                        <div class="sb-desc" data-i18n="st_theme_desc">Màu chủ đạo hiện tại: Xanh tím</div>
+                                    </div>
+                                    <button type="button" class="btn-outline-small" onclick="toggleThemeModal()" data-i18n="st_change">Thay đổi</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 2. TÀI KHOẢN -->
+                        <div class="settings-block">
+                            <div class="sb-header"><i data-lucide="user"></i> <span data-i18n="st_account">Tài khoản</span></div>
+                            <div class="sb-content">
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="your_name">Tên hiển thị</div>
+                                    </div>
+                                    <input type="text" id="settingName" required class="sb-input" style="width: 200px;">
+                                </div>
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="st_default_acc">Tài khoản mặc định</div>
+                                        <div class="sb-desc" data-i18n="st_default_acc_desc">Ví để trừ giao dịch tiền tệ</div>
+                                    </div>
+                                    <div class="sb-badge" data-i18n="st_cash">Tiền mặt</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. BẢO MẬT -->
+                        <div class="settings-block">
+                            <div class="sb-header"><i data-lucide="shield-check"></i> <span data-i18n="st_security">Bảo mật</span></div>
+                            <div class="sb-content">
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="st_change_pass">Đổi mật khẩu</div>
+                                        <div class="sb-desc" data-i18n="new_pass">Để trống nếu không đổi</div>
+                                    </div>
+                                    <input type="password" id="settingPassword" placeholder="***" class="sb-input" style="width: 200px;">
+                                </div>
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="st_forgot_pass">Quên mật khẩu</div>
+                                        <div class="sb-desc" data-i18n="st_forgot_desc">Xóa dữ liệu để lập lại từ đầu</div>
+                                    </div>
+                                    <button type="button" class="btn-outline-danger" onclick="hardReset()" data-i18n="st_reset">Thiết lập lại</button>
+                                </div>
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="st_faceid">Cài đặt Face ID</div>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="settingFaceId">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 4. QUẢN LÝ THIẾT LẬP -->
+                        <div class="settings-block">
+                            <div class="sb-header"><i data-lucide="sliders"></i> <span data-i18n="st_management">Quản lý và Thiết lập</span></div>
+                            <div class="sb-content">
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="budget_month">Thiết lập ngân sách Tháng</div>
+                                    </div>
+                                    <input type="text" inputmode="numeric" id="settingBudgetMonth" class="sb-input" placeholder="0">
+                                </div>
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="budget_day">Thiết lập ngân sách Ngày</div>
+                                    </div>
+                                    <input type="text" inputmode="numeric" id="settingBudgetDay" class="sb-input" placeholder="0">
+                                </div>
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="st_noti">Quản lý thông báo</div>
+                                        <div class="sb-desc" data-i18n="st_noti_desc">Bật popup cảnh báo tiêu dùng</div>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="settingNoti" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 5. ÂM THANH -->
+                        <div class="settings-block">
+                            <div class="sb-header"><i data-lucide="music"></i> <span data-i18n="st_audio">Âm thanh</span></div>
+                            <div class="sb-content">
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title" data-i18n="login_sound">Âm thanh đăng nhập</div>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="settingSound" checked>
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-end;">
+                            <button type="submit" class="btn-primary" style="padding: 12px 32px;"><span data-i18n="save">Lưu Cài Đặt Khối</span></button>
+                        </div>
+                    </form>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Edit/Add Modal for Transactions -->
+    <div class="modal-overlay" id="txModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title" data-i18n="add_tx">Thêm giao dịch</h2>
+                <button class="icon-btn-close" onclick="closeModal()" type="button"><i data-lucide="x"></i></button>
+            </div>
+            <form id="txForm" onsubmit="handleFormSubmit(event)">
+                <input type="hidden" id="txId">
+                <input type="hidden" id="txType">
+                
+                <div class="form-group">
+                    <label for="txAmount" data-i18n="amount">Số tiền</label>
+                    <input type="text" inputmode="numeric" id="txAmount" required placeholder="0">
+                </div>
+                <div class="form-group">
+                    <label for="txCategory" data-i18n="category">Hạng mục</label>
+                    <select id="txCategory" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="txDate" data-i18n="date">Ngày</label>
+                    <input type="date" id="txDate" required>
+                </div>
+                <div class="form-group">
+                    <label for="txNote" data-i18n="note">Ghi chú</label>
+                    <input type="text" id="txNote" placeholder="...">
+                </div>
+                <div class="modal-actions mt-3">
+                    <button type="button" class="btn-danger outline" id="btnDelete" style="display: none;" onclick="handleDelete()" data-i18n="delete">Xóa</button>
+                    <button type="submit" class="btn-primary flex-1" style="justify-content: center;"><span data-i18n="save">Lưu thông tin</span></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Theme Modal -->
+    <div class="modal-overlay" id="themeModal">
+        <div class="modal" style="max-width: 350px;">
+            <div class="modal-header">
+                <h2 data-i18n="st_theme_colors">Màu sắc chủ đạo</h2>
+                <button class="icon-btn-close" onclick="closeThemeModal()" type="button"><i data-lucide="x"></i></button>
+            </div>
+            <div class="theme-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 16px;">
+                <div class="theme-dot" style="background-color: #4F46E5;" onclick="setThemeColor('#4F46E5', '#EEF2FF', 'Indigo')"></div>
+                <div class="theme-dot" style="background-color: #10B981;" onclick="setThemeColor('#10B981', 'rgba(16,185,129,0.1)', 'Emeral')"></div>
+                <div class="theme-dot" style="background-color: #F43F5E;" onclick="setThemeColor('#F43F5E', 'rgba(244,63,94,0.1)', 'Rose')"></div>
+                <div class="theme-dot" style="background-color: #8B5CF6;" onclick="setThemeColor('#8B5CF6', 'rgba(139,92,246,0.1)', 'Violet')"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bottom Nav for Mobile -->
+    <nav class="bottom-nav">
+        <a href="#" class="active" onclick="switchTab('overview')" id="nav-overview"><i data-lucide="layout-dashboard"></i></a>
+        <a href="#" onclick="switchTab('income')" id="nav-income"><i data-lucide="trending-up"></i></a>
+        <a href="#" onclick="switchTab('expense')" id="nav-expense"><i data-lucide="trending-down"></i></a>
+        <a href="#" onclick="switchTab('report')" id="nav-report"><i data-lucide="pie-chart"></i></a>
+        <a href="#" onclick="switchTab('settings')" id="nav-settings"><i data-lucide="settings"></i></a>
+    </nav>
+
+    <script src="app.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
