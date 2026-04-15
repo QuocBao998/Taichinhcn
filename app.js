@@ -158,97 +158,138 @@ function playSuccessSound() {
 
 // --- Firebase Authentication & Init ---
 function initAuthListener() {
-    if (!USE_FIREBASE) {
-        const savedUser = localStorage.getItem('tc_username');
-        if (savedUser) {
-            currentUser = { displayName: savedUser, uid: 'local' };
-            updateUI();
-            proceedToApp();
-        } else {
-            showLoginScreen();
-        }
+    // Local Session Check (if not in firebase mode or firebase fails to find user)
+    const savedUser = localStorage.getItem('tc_username');
+    if (!USE_FIREBASE && savedUser) {
+        currentUser = { displayName: savedUser, uid: 'local' };
+        updateUI();
+        proceedToApp();
         return;
     }
 
-    onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            currentUser = user;
-            await syncUserDetails();
-            startTransactionListener();
-            proceedToApp();
-        } else {
-            currentUser = null;
-            if (unsubscribeTransactions) unsubscribeTransactions();
-            showLoginScreen();
-        }
-    });
+    // Firebase Auth Observer (Always register if initialized)
+    if (auth) {
+        onAuthStateChanged(auth, async (user) => {
+            if (user && USE_FIREBASE) {
+                currentUser = user;
+                await syncUserDetails();
+                startTransactionListener();
+                proceedToApp();
+            } else if (!user && USE_FIREBASE) {
+                currentUser = null;
+                if (unsubscribeTransactions) unsubscribeTransactions();
+                showLoginScreen();
+            } else if (!savedUser) {
+                // If offline and no local user, show login
+                showLoginScreen();
+            }
+        });
+    } else if (!savedUser) {
+        showLoginScreen();
+    }
 }
 
 function showLoginScreen() {
     const loginScreen = document.getElementById('loginScreen');
+    if (!loginScreen) return;
+    
     loginScreen.style.display = 'flex';
     loginScreen.classList.add('active');
     document.getElementById('mainDashboard').style.display = 'none';
+
+    // UI Configuration based on Mode
+    const isOnline = localStorage.getItem('tc_use_firebase') === 'true';
+    const onlineFields = document.getElementById('onlineFields');
+    const localGrp = document.getElementById('localNameGroup');
+    const passGrp = document.getElementById('passFields');
+    const modeLink = document.getElementById('toggleModeLink');
+    const loginTitle = document.getElementById('loginPromptTitle');
+
+    if (isOnline) {
+        if (onlineFields) onlineFields.style.display = 'block';
+        if (localGrp) localGrp.style.display = 'none';
+        if (passGrp) passGrp.style.display = 'block';
+        if (modeLink) modeLink.textContent = currentLang === 'vi' ? 'Sử dụng chế độ Offline (Máy tính)' : 'Switch to Offline Mode';
+        if (loginTitle) loginTitle.textContent = currentLang === 'vi' ? 'Đăng nhập Online' : 'Online Login';
+    } else {
+        if (onlineFields) onlineFields.style.display = 'none';
+        if (localGrp) localGrp.style.display = 'block';
+        if (passGrp) passGrp.style.display = 'none';
+        if (modeLink) modeLink.textContent = currentLang === 'vi' ? 'Sử dụng chế độ Online (Đồng bộ)' : 'Switch to Online Mode';
+        if (loginTitle) loginTitle.textContent = currentLang === 'vi' ? 'Truy cập nhanh' : 'Quick Access';
+    }
+}
+
+function toggleLoginType(e) {
+    if(e) e.preventDefault();
+    const current = localStorage.getItem('tc_use_firebase') === 'true';
+    const next = !current;
+    localStorage.setItem('tc_use_firebase', next);
+    USE_FIREBASE = next;
+    
+    // Refresh UI
+    showLoginScreen();
 }
 
 async function handleLoginSubmit(e) {
     e.preventDefault();
+    const errorEl = document.getElementById('loginError');
+    if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+
+    const isOnline = localStorage.getItem('tc_use_firebase') === 'true';
+
+    // --- CASE A: LOCAL MODE ---
+    if (!isOnline) {
+        const localName = document.getElementById('localUserName').value;
+        if (!localName) {
+            if(errorEl) { errorEl.style.display = 'block'; errorEl.textContent = 'Vui lòng nhập tên.'; }
+            return;
+        }
+        localStorage.setItem('tc_username', localName);
+        currentUser = { displayName: localName, uid: 'local' };
+        proceedToApp();
+        return;
+    }
+
+    // --- CASE B: ONLINE MODE ---
     const email = document.getElementById('loginEmail').value;
     const pass = document.getElementById('loginPassword').value;
-    const errorEl = document.getElementById('loginError');
     const isSetup = document.getElementById('nameSetupGroup').style.display === 'block';
 
+    if (!email || !pass) {
+        if(errorEl) { errorEl.style.display = 'block'; errorEl.textContent = 'Vui lòng nhập Email và Mật khẩu.'; }
+        return;
+    }
+
     try {
-        console.log("Submitting login form...", { isSetup, email });
         if (isSetup) {
             const nameInput = document.getElementById('setupName').value;
-            console.log("Attempting to create user...");
             const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-            console.log("User created successfully:", userCredential.user.uid);
             await updateProfile(userCredential.user, { displayName: nameInput || 'User' });
             
-            // ... settings ...
             await setDoc(doc(db, "settings", userCredential.user.uid), {
                 username: nameInput || 'User',
-                budgetMonth: 0,
-                budgetDay: 0,
-                theme: 'light',
-                lang: 'vi'
+                budgetMonth: 0, budgetDay: 0, theme: 'light', lang: 'vi'
             });
-            console.log("Settings created.");
 
-            // Migrate data if exists
             await migrateLocalData(userCredential.user.uid);
-            
         } else {
-            console.log("Attempting sign in...");
             await signInWithEmailAndPassword(auth, email, pass);
-            console.log("Sign in successful.");
         }
-        errorEl.style.display = 'none';
-        errorEl.textContent = '';
+        // Force sync on success cases to handle dashboard transition
+        USE_FIREBASE = true;
+        localStorage.setItem('tc_use_firebase', 'true');
     } catch (error) {
         console.error("Auth error:", error);
-        errorEl.style.display = 'block';
-        
-        let msg = error.message;
-        if (error.code === 'auth/operation-not-allowed') {
-            msg = "Lỗi: Tính năng Đăng nhập chưa được bật trong Firebase Console.";
-        } else if (error.code === 'auth/user-not-found') {
-            msg = "Tài khoản không tồn tại. Vui lòng kiểm tra lại Email hoặc Đăng ký mới.";
-        } else if (error.code === 'auth/wrong-password') {
-            msg = "Mật khẩu không chính xác. Vui lòng thử lại.";
-        } else if (error.code === 'auth/invalid-email') {
-            msg = "Địa chỉ Email không hợp lệ.";
-        } else if (error.code === 'auth/email-already-in-use') {
-            msg = "Email này đã được sử dụng. Vui lòng Đăng nhập hoặc dùng Email khác.";
-        } else if (error.code === 'auth/weak-password') {
-            msg = "Mật khẩu quá yếu (yêu cầu tối thiểu 6 ký tự).";
-        } else if (error.code === 'auth/invalid-credential') {
-            msg = "Thông tin đăng nhập không chính xác hoặc đã hết hạn.";
+        if (errorEl) {
+            errorEl.style.display = 'block';
+            let msg = error.message;
+            if (error.code === 'auth/wrong-password') msg = "Mật khẩu không chính xác.";
+            else if (error.code === 'auth/user-not-found') msg = "Tài khoản không tồn tại.";
+            else if (error.code === 'auth/invalid-credential') msg = "Thông tin đăng nhập không chính xác.";
+            else if (error.code === 'auth/email-already-in-use') msg = "Email đã được sử dụng.";
+            errorEl.textContent = msg;
         }
-        
-        errorEl.textContent = msg;
     }
 }
 

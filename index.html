@@ -38,24 +38,41 @@
             
             <form id="loginForm" onsubmit="handleLoginSubmit(event)">
                 <h3 id="loginPromptTitle" style="text-align: center; margin-bottom: 24px; color: var(--text-primary);">Đăng nhập</h3>
-                <div class="form-group" id="emailGroup">
-                    <label for="loginEmail">Email</label>
-                    <input type="email" id="loginEmail" required placeholder="example@email.com">
+                
+                <!-- Online Mode Fields -->
+                <div id="onlineFields">
+                    <div class="form-group" id="emailGroup">
+                        <label for="loginEmail">Email</label>
+                        <input type="email" id="loginEmail" placeholder="example@email.com">
+                    </div>
+                    <div class="form-group" id="nameSetupGroup" style="display: none;">
+                        <label for="setupName" data-i18n="your_name">Tên của bạn</label>
+                        <input type="text" id="setupName" placeholder="Ví dụ: Anh Bảo">
+                    </div>
                 </div>
-                <div class="form-group" id="nameSetupGroup" style="display: none;">
-                    <label for="setupName" data-i18n="your_name">Tên của bạn</label>
-                    <input type="text" id="setupName" placeholder="Ví dụ: Anh Bảo">
+
+                <!-- Local Mode Fields -->
+                <div id="localNameGroup" style="display: none;">
+                    <div class="form-group">
+                        <label for="localUserName" data-i18n="your_name">Tên hiển thị</label>
+                        <input type="text" id="localUserName" placeholder="Tên của bạn">
+                    </div>
                 </div>
-                <div class="form-group">
+
+                <div class="form-group" id="passFields">
                     <label for="loginPassword" id="passwordLabel" data-i18n="password">Mật khẩu</label>
-                    <input type="password" id="loginPassword" required placeholder="***">
+                    <input type="password" id="loginPassword" placeholder="***">
                 </div>
+
                 <p id="loginError" style="color: var(--danger); font-size: 0.85rem; text-align: center; margin-bottom: 16px; display: none;"></p>
+                
                 <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
                     <span id="loginBtnText">Truy cập ứng dụng</span> <i data-lucide="arrow-right"></i>
                 </button>
-                <div style="text-align: center; margin-top: 16px;">
+
+                <div style="text-align: center; margin-top: 16px; display: flex; flex-direction: column; gap: 8px;">
                     <a href="#" id="toggleLoginLink" onclick="toggleLoginMode(event)" style="font-size: 0.85rem; color: var(--primary); text-decoration: none;">Chưa có tài khoản? Đăng ký ngay</a>
+                    <a href="#" id="toggleModeLink" onclick="toggleLoginType(event)" style="font-size: 0.75rem; color: var(--text-secondary); text-decoration: underline;">Sử dụng chế độ Offline (Máy tính)</a>
                 </div>
             </form>
         </div>
