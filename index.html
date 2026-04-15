@@ -13,6 +13,17 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="style.css">
+    <!-- Firebase SDK Import Map -->
+    <script type="importmap">
+      {
+        "imports": {
+          "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+          "firebase/analytics": "https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js",
+          "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js",
+          "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js"
+        }
+      }
+    </script>
 </head>
 <body data-theme="light">
     
@@ -26,7 +37,11 @@
             </div>
             
             <form id="loginForm" onsubmit="handleLoginSubmit(event)">
-                <h3 id="loginPromptTitle" style="text-align: center; margin-bottom: 24px; color: var(--text-primary);" data-i18n="login_title">Đăng nhập</h3>
+                <h3 id="loginPromptTitle" style="text-align: center; margin-bottom: 24px; color: var(--text-primary);">Đăng nhập</h3>
+                <div class="form-group" id="emailGroup">
+                    <label for="loginEmail">Email</label>
+                    <input type="email" id="loginEmail" required placeholder="example@email.com">
+                </div>
                 <div class="form-group" id="nameSetupGroup" style="display: none;">
                     <label for="setupName" data-i18n="your_name">Tên của bạn</label>
                     <input type="text" id="setupName" placeholder="Ví dụ: Anh Bảo">
@@ -35,10 +50,13 @@
                     <label for="loginPassword" id="passwordLabel" data-i18n="password">Mật khẩu</label>
                     <input type="password" id="loginPassword" required placeholder="***">
                 </div>
-                <p id="loginError" style="color: var(--danger); font-size: 0.85rem; text-align: center; margin-bottom: 16px; display: none;" data-i18n="pass_wrong">Mật khẩu không chính xác!</p>
+                <p id="loginError" style="color: var(--danger); font-size: 0.85rem; text-align: center; margin-bottom: 16px; display: none;"></p>
                 <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">
-                    <span data-i18n="login_btn">Truy cập ứng dụng</span> <i data-lucide="arrow-right"></i>
+                    <span id="loginBtnText">Truy cập ứng dụng</span> <i data-lucide="arrow-right"></i>
                 </button>
+                <div style="text-align: center; margin-top: 16px;">
+                    <a href="#" id="toggleLoginLink" onclick="toggleLoginMode(event)" style="font-size: 0.85rem; color: var(--primary); text-decoration: none;">Chưa có tài khoản? Đăng ký ngay</a>
+                </div>
             </form>
         </div>
     </div>
@@ -383,6 +401,23 @@
                             </div>
                         </div>
 
+                        <!-- 6. HỆ THỐNG -->
+                        <div class="settings-block">
+                            <div class="sb-header"><i data-lucide="server"></i> <span data-i18n="st_system">Hệ thống</span></div>
+                            <div class="sb-content">
+                                <div class="sb-row">
+                                    <div class="sb-label">
+                                        <div class="sb-title">Chế độ Online (Firebase Sync)</div>
+                                        <div class="sb-desc">Bật để đồng bộ dữ liệu lên đám mây</div>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="settingUseFirebase">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
                         <div style="display: flex; justify-content: flex-end;">
                             <button type="submit" class="btn-primary" style="padding: 12px 32px;"><span data-i18n="save">Lưu Cài Đặt Khối</span></button>
                         </div>
@@ -453,7 +488,11 @@
         <a href="#" onclick="switchTab('settings')" id="nav-settings"><i data-lucide="settings"></i></a>
     </nav>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
+    <script type="module">
+        import { app, analytics } from './firebase-config.js';
+        // Firebase is loaded and initialized
+    </script>
     <script>
         lucide.createIcons();
     </script>

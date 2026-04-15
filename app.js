@@ -1,3 +1,14 @@
+import { auth, db } from './firebase-config.js';
+import { 
+    onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, updateProfile, updatePassword 
+} from "firebase/auth";
+import { 
+    collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, doc, orderBy, setDoc, getDoc 
+} from "firebase/firestore";
+
+// --- Environment Config ---
+let USE_FIREBASE = localStorage.getItem('tc_use_firebase') === 'true'; // Load preference from storage
+
 // --- Constants & Config ---
 const formatCurrency = (amount) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
@@ -46,7 +57,7 @@ const I18N = {
         st_reset: "Thiết lập lại", st_faceid: "Cài đặt Face ID", st_management: "Quản lý và Thiết lập", st_noti: "Quản lý thông báo",
         st_noti_desc: "Bật popup cảnh báo tiêu dùng", st_audio: "Âm thanh", st_theme_colors: "Màu sắc chủ đạo",
         total_balance: "Tổng Còn Lại", pd_month: "Tháng này", pd_year: "Năm nay", pd_day: "Hôm nay",
-        noti_title: "Thông báo", noti_empty: "Không có thông báo nào"
+        noti_title: "Thông báo", noti_empty: "Không có thông báo nào", st_system: "Hệ thống"
     },
     en: {
         app_title: "MyLife", app_subtitle: "PRODUCTIVITY HUB", login_title: "Login", your_name: "Display Name",
@@ -66,24 +77,27 @@ const I18N = {
         st_reset: "Reset Data", st_faceid: "Face ID Setting", st_management: "Management & Config", st_noti: "Notification Control",
         st_noti_desc: "Enable spending alerts", st_audio: "Sound & Haptics", st_theme_colors: "Accent Colors",
         total_balance: "Total Balance", pd_month: "This Month", pd_year: "This Year", pd_day: "Today",
-        noti_title: "Notifications", noti_empty: "No notifications"
+        noti_title: "Notifications", noti_empty: "No notifications", st_system: "System"
     }
 };
 
 // --- State Management ---
-let transactions = JSON.parse(localStorage.getItem('v3_transactions')) || [];
+let transactions = []; // Data container
+if (!USE_FIREBASE) {
+    transactions = JSON.parse(localStorage.getItem('v3_transactions')) || [];
+}
 let incomeChartInstance = null;
 let expenseChartInstance = null;
 
-let currentUser = localStorage.getItem('tc_username');
-let currentPass = localStorage.getItem('tc_password');
+let currentUser = null; // Firebase User object
 let soundEnabled = localStorage.getItem('tc_sound') !== 'false';
-let budgetMonth = parseFloat(localStorage.getItem('tc_budgetMonth')) || 0;
-let budgetDay = parseFloat(localStorage.getItem('tc_budgetDay')) || 0;
+let budgetMonth = parseInt(localStorage.getItem('tc_budget_month')) || 0;
+let budgetDay = parseInt(localStorage.getItem('tc_budget_day')) || 0;
 let currentLang = localStorage.getItem('tc_lang') || 'vi';
 
 let filterState = { income: 'month', expense: 'month' };
 let globalSearchQuery = '';
+let unsubscribeTransactions = null;
 
 function setFilterPeriod(type, period) {
     filterState[type] = period;
@@ -142,44 +156,152 @@ function playSuccessSound() {
     } catch(e) { console.log('Audio error:', e); }
 }
 
-// --- Login & Settings Init ---
-function initAuth() {
+// --- Firebase Authentication & Init ---
+function initAuthListener() {
+    if (!USE_FIREBASE) {
+        const savedUser = localStorage.getItem('tc_username');
+        if (savedUser) {
+            currentUser = { displayName: savedUser, uid: 'local' };
+            updateUI();
+            proceedToApp();
+        } else {
+            showLoginScreen();
+        }
+        return;
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            currentUser = user;
+            await syncUserDetails();
+            startTransactionListener();
+            proceedToApp();
+        } else {
+            currentUser = null;
+            if (unsubscribeTransactions) unsubscribeTransactions();
+            showLoginScreen();
+        }
+    });
+}
+
+function showLoginScreen() {
     const loginScreen = document.getElementById('loginScreen');
-    if (!currentPass) {
-        document.getElementById('loginPromptTitle').textContent = currentLang === 'vi' ? 'Khởi tạo tài khoản' : 'Setup Account';
-        document.getElementById('nameSetupGroup').style.display = 'block';
-        document.getElementById('passwordLabel').textContent = currentLang === 'vi' ? 'Tạo mật khẩu' : 'Create Password';
-        document.getElementById('setupName').required = true;
-    } else {
-        document.getElementById('loginPromptTitle').textContent = I18N[currentLang]['login_title'];
-        document.getElementById('nameSetupGroup').style.display = 'none';
-        document.getElementById('setupName').required = false;
+    loginScreen.style.display = 'flex';
+    loginScreen.classList.add('active');
+    document.getElementById('mainDashboard').style.display = 'none';
+}
+
+async function handleLoginSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const pass = document.getElementById('loginPassword').value;
+    const errorEl = document.getElementById('loginError');
+    const isSetup = document.getElementById('nameSetupGroup').style.display === 'block';
+
+    try {
+        console.log("Submitting login form...", { isSetup, email });
+        if (isSetup) {
+            const nameInput = document.getElementById('setupName').value;
+            console.log("Attempting to create user...");
+            const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
+            console.log("User created successfully:", userCredential.user.uid);
+            await updateProfile(userCredential.user, { displayName: nameInput || 'User' });
+            
+            // ... settings ...
+            await setDoc(doc(db, "settings", userCredential.user.uid), {
+                username: nameInput || 'User',
+                budgetMonth: 0,
+                budgetDay: 0,
+                theme: 'light',
+                lang: 'vi'
+            });
+            console.log("Settings created.");
+
+            // Migrate data if exists
+            await migrateLocalData(userCredential.user.uid);
+            
+        } else {
+            console.log("Attempting sign in...");
+            await signInWithEmailAndPassword(auth, email, pass);
+            console.log("Sign in successful.");
+        }
+        errorEl.style.display = 'none';
+        errorEl.textContent = '';
+    } catch (error) {
+        console.error("Auth error:", error);
+        errorEl.style.display = 'block';
+        
+        let msg = error.message;
+        if (error.code === 'auth/operation-not-allowed') {
+            msg = "Lỗi: Tính năng Đăng nhập chưa được bật trong Firebase Console.";
+        } else if (error.code === 'auth/user-not-found') {
+            msg = "Tài khoản không tồn tại. Vui lòng kiểm tra lại Email hoặc Đăng ký mới.";
+        } else if (error.code === 'auth/wrong-password') {
+            msg = "Mật khẩu không chính xác. Vui lòng thử lại.";
+        } else if (error.code === 'auth/invalid-email') {
+            msg = "Địa chỉ Email không hợp lệ.";
+        } else if (error.code === 'auth/email-already-in-use') {
+            msg = "Email này đã được sử dụng. Vui lòng Đăng nhập hoặc dùng Email khác.";
+        } else if (error.code === 'auth/weak-password') {
+            msg = "Mật khẩu quá yếu (yêu cầu tối thiểu 6 ký tự).";
+        } else if (error.code === 'auth/invalid-credential') {
+            msg = "Thông tin đăng nhập không chính xác hoặc đã hết hạn.";
+        }
+        
+        errorEl.textContent = msg;
     }
 }
 
-function handleLoginSubmit(e) {
-    e.preventDefault();
-    const passInput = document.getElementById('loginPassword').value;
-    const nameInput = document.getElementById('setupName').value;
-    const errorEl = document.getElementById('loginError');
-
-    if (!currentPass) {
-        currentUser = nameInput || 'Bảo';
-        currentPass = passInput;
-        localStorage.setItem('tc_username', currentUser);
-        localStorage.setItem('tc_password', currentPass);
-        localStorage.setItem('tc_sound', 'true');
-        proceedToApp();
-    } else {
-        if (passInput === currentPass) {
-            proceedToApp();
-        } else {
-            errorEl.style.display = 'block';
+async function syncUserDetails() {
+    if (!currentUser) return;
+    const settingsRef = doc(db, "settings", currentUser.uid);
+    const settingsSnap = await getDoc(settingsRef);
+    
+    if (settingsSnap.exists()) {
+        const data = settingsSnap.data();
+        budgetMonth = data.budgetMonth || 0;
+        budgetDay = data.budgetDay || 0;
+        if (data.theme) document.body.setAttribute('data-theme', data.theme);
+        if (data.lang) {
+            currentLang = data.lang;
+            localStorage.setItem('tc_lang', currentLang);
         }
     }
 }
 
+async function migrateLocalData(uid) {
+    const localTx = JSON.parse(localStorage.getItem('v3_transactions')) || [];
+    if (localTx.length > 0) {
+        console.log("Migrating local data to Firestore...");
+        for (const tx of localTx) {
+            await addDoc(collection(db, "users", uid, "transactions"), tx);
+        }
+        localStorage.removeItem('v3_transactions');
+        console.log("Migration complete.");
+    }
+}
+
+function startTransactionListener() {
+    if (!currentUser) return;
+    const q = query(
+        collection(db, "users", currentUser.uid, "transactions"),
+        orderBy("date", "desc")
+    );
+    
+    unsubscribeTransactions = onSnapshot(q, (snapshot) => {
+        transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        updateUI();
+        if (document.getElementById('report').classList.contains('active')) renderReports();
+    });
+}
+
 function proceedToApp() {
+    if (!currentUser) return;
+    
+    // Sync settings UI with current mode
+    const modeToggle = document.getElementById('settingUseFirebase');
+    if (modeToggle) modeToggle.checked = USE_FIREBASE;
+
     playSuccessSound();
     document.getElementById('loginScreen').classList.remove('active');
     setTimeout(() => {
@@ -190,55 +312,96 @@ function proceedToApp() {
         updateWeather(); 
     }, 400);
 
-    // Sync settings form
-    document.getElementById('settingName').value = currentUser || '';
+    // Sync UI elements
+    const displayName = currentUser.displayName || 'Bảo';
+    document.getElementById('settingName').value = displayName;
     if (document.getElementById('card-holder-name')) {
-        document.getElementById('card-holder-name').textContent = currentUser || 'MYLIFE';
+        document.getElementById('card-holder-name').textContent = displayName.toUpperCase();
     }
+    
     document.getElementById('settingSound').checked = soundEnabled;
     document.getElementById('settingBudgetMonth').value = budgetMonth ? new Intl.NumberFormat('vi-VN').format(budgetMonth) : '';
     document.getElementById('settingBudgetDay').value = budgetDay ? new Intl.NumberFormat('vi-VN').format(budgetDay) : '';
-    
-    // Check saved theme color
-    const savedColor = localStorage.getItem('tc_theme_color');
-    if(savedColor) document.documentElement.style.setProperty('--primary', savedColor);
-    const savedLight = localStorage.getItem('tc_theme_light');
-    if(savedLight) document.documentElement.style.setProperty('--primary-light', savedLight);
 }
 
-function saveSettings(e) {
+async function saveSettings(e) {
     e.preventDefault();
+    if (!currentUser) return;
+    
     const newName = document.getElementById('settingName').value;
-    const newPass = document.getElementById('settingPassword').value;
     const newSound = document.getElementById('settingSound').checked;
+    const newPass = document.getElementById('settingPassword').value;
+    const newUseFirebase = document.getElementById('settingUseFirebase') ? document.getElementById('settingUseFirebase').checked : USE_FIREBASE;
     
     const vM = document.getElementById('settingBudgetMonth').value.replace(/\D/g, '');
     const vD = document.getElementById('settingBudgetDay').value.replace(/\D/g, '');
 
-    if (newName) { 
-        currentUser = newName; 
-        localStorage.setItem('tc_username', currentUser); 
-        if (document.getElementById('card-holder-name')) {
-            document.getElementById('card-holder-name').textContent = currentUser;
+    budgetMonth = parseInt(vM, 10) || 0;
+    budgetDay = parseInt(vD, 10) || 0;
+    soundEnabled = newSound;
+
+    // 1. Handle Password Update
+    if (newPass) {
+        if (USE_FIREBASE) {
+            try {
+                await updatePassword(auth.currentUser, newPass);
+            } catch (err) {
+                console.error("Firebase Password Update Error:", err);
+                alert(currentLang === 'vi' ? 'Lỗi cập nhật mật khẩu Firebase. Bạn cần đăng nhập lại gần đây để thực hiện hành động này.' : 'Firebase Password Update Error. You may need to re-login to perform this action.');
+            }
+        } else {
+            localStorage.setItem('tc_password', newPass); // Minimal local "security"
         }
     }
-    if (newPass) { currentPass = newPass; localStorage.setItem('tc_password', currentPass); }
 
-    soundEnabled = newSound; localStorage.setItem('tc_sound', soundEnabled ? 'true' : 'false');
-    
-    budgetMonth = parseFloat(vM) || 0; localStorage.setItem('tc_budgetMonth', budgetMonth);
-    budgetDay = parseFloat(vD) || 0; localStorage.setItem('tc_budgetDay', budgetDay);
+    // 2. Handle Display Name & Config
+    currentUser.displayName = newName;
 
+    if (!USE_FIREBASE) {
+        localStorage.setItem('tc_username', newName);
+        localStorage.setItem('tc_sound', newSound);
+        localStorage.setItem('tc_budget_month', budgetMonth);
+        localStorage.setItem('tc_budget_day', budgetDay);
+    } else {
+        try {
+            await updateProfile(auth.currentUser, { displayName: newName });
+            await setDoc(doc(db, "settings", currentUser.uid), {
+                username: newName,
+                budgetMonth,
+                budgetDay,
+                soundEnabled,
+                theme: document.body.getAttribute('data-theme') || 'light',
+                lang: currentLang
+            }, { merge: true });
+        } catch (err) {
+            console.error("Firebase settings save error:", err);
+        }
+    }
+
+    // 3. Handle Mode Toggle
+    const modeChanged = newUseFirebase !== USE_FIREBASE;
+    localStorage.setItem('tc_use_firebase', newUseFirebase);
+
+    // Update UI immediately
     setGreetingDate();
-    document.getElementById('settingPassword').value = '';
-    updateUI();
+    if (document.getElementById('card-holder-name')) {
+        document.getElementById('card-holder-name').textContent = newName.toUpperCase();
+    }
+    updateUI(); 
+
     if(document.getElementById('report').classList.contains('active')) renderReports();
-    alert(currentLang === 'vi' ? 'Đã lưu Cài đặt thành công!' : 'Settings saved successfully!');
+    
+    if (modeChanged) {
+        alert(currentLang === 'vi' ? 'Đã đổi chế độ. Ứng dụng sẽ tải lại để áp dụng.' : 'Mode changed. App will reload to apply.');
+        location.reload();
+    } else {
+        alert(currentLang === 'vi' ? 'Đã lưu Cài đặt thành công!' : 'Settings saved successfully!');
+    }
 }
 
 // --- Initialize ---
 document.addEventListener('DOMContentLoaded', () => {
-    initAuth();
+    initAuthListener(); // Main entry point for Firebase Auth
     applyLanguage();
     
     const isDark = localStorage.getItem('tc_theme') === 'dark';
@@ -337,7 +500,8 @@ function setGreetingDate() {
         else greeting = 'Good evening';
     }
 
-    document.getElementById('greeting-title').innerHTML = `${greeting}, ${currentUser} <span class="wave">👋</span>`;
+    const displayName = currentUser && currentUser.displayName ? currentUser.displayName : (currentLang === 'vi' ? 'Bạn' : 'User');
+    document.getElementById('greeting-title').innerHTML = `${greeting}, ${displayName} <span class="wave">👋</span>`;
     const dateStr = now.toLocaleDateString(currentLang === 'vi' ? 'vi-VN' : 'en-US', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' });
     document.getElementById('greeting-date').textContent = dateStr.toUpperCase();
 }
@@ -367,48 +531,64 @@ function switchTab(tabId) {
 }
 
 // --- Data Operations ---
-function saveData() {
-    localStorage.setItem('v3_transactions', JSON.stringify(transactions));
-    updateUI();
-}
-
-function handleFormSubmit(e) {
+async function handleFormSubmit(e) {
     e.preventDefault();
     const id = document.getElementById('txId').value;
     const type = document.getElementById('txType').value;
-    
     const rawAmountStr = document.getElementById('txAmount').value.replace(/\D/g, '');
     const amount = parseFloat(rawAmountStr) || 0;
-    
     const categoryId = document.getElementById('txCategory').value;
     const date = document.getElementById('txDate').value;
     const note = document.getElementById('txNote').value;
 
-    const txData = { id: id || Date.now().toString(), type, amount, categoryId, date, note };
+    const txData = { type, amount, categoryId, date, note, updatedAt: new Date().toISOString() };
 
-    if (id) {
-        const index = transactions.findIndex(t => t.id === id);
-        if (index > -1) transactions[index] = txData;
-    } else {
-        transactions.unshift(txData);
+    if (!USE_FIREBASE) {
+        const localId = id || Date.now().toString();
+        if (id) {
+            const index = transactions.findIndex(t => t.id === id);
+            if (index > -1) transactions[index] = { ...txData, id: localId };
+        } else {
+            transactions.unshift({ ...txData, id: localId });
+        }
+        transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+        localStorage.setItem('v3_transactions', JSON.stringify(transactions));
+        updateUI();
+        closeModal();
+        return;
     }
 
-    transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
-    saveData();
-    closeModal();
-    
-    if (document.getElementById('report').classList.contains('active')) renderReports();
+    if (!currentUser) return;
+    try {
+        if (id) {
+            const txRef = doc(db, "users", currentUser.uid, "transactions", id);
+            await updateDoc(txRef, txData);
+        } else {
+            await addDoc(collection(db, "users", currentUser.uid, "transactions"), txData);
+        }
+        closeModal();
+    } catch (err) { console.error("Firestore submit error:", err); }
 }
 
-function handleDelete() {
+async function handleDelete() {
     const id = document.getElementById('txId').value;
     const confirmMsg = currentLang === 'vi' ? 'Bạn có chắc chắn muốn xóa?' : 'Are you sure you want to delete?';
-    if(confirm(confirmMsg)) {
+    if(!confirm(confirmMsg)) return;
+
+    if (!USE_FIREBASE) {
         transactions = transactions.filter(t => t.id !== id);
-        saveData();
+        localStorage.setItem('v3_transactions', JSON.stringify(transactions));
+        updateUI();
         closeModal();
-        if (document.getElementById('report').classList.contains('active')) renderReports();
+        return;
     }
+
+    if (!currentUser) return;
+    try {
+        const txRef = doc(db, "users", currentUser.uid, "transactions", id);
+        await deleteDoc(txRef);
+        closeModal();
+    } catch (err) { console.error("Firestore delete error:", err); }
 }
 
 // --- Modal Handle ---
@@ -699,17 +879,34 @@ function renderChart(type, canvasId, detailsId) {
     else expenseChartInstance = chartInstance;
 }
 
-// --- V6 New Features ---
-function logoutSession() {
+// --- Auth Actions ---
+async function logoutSession() {
     if(confirm(currentLang === 'vi' ? 'Bạn có muốn đăng xuất không?' : 'Do you want to logout?')) {
-        location.reload();
+        try {
+            if (USE_FIREBASE) {
+                await signOut(auth);
+            } else {
+                localStorage.removeItem('tc_username');
+            }
+            location.reload();
+        } catch (err) {
+            console.error("Logout error:", err);
+        }
     }
 }
 
-function hardReset() {
+async function hardReset() {
     if(confirm(currentLang === 'vi' ? 'Hành động này sẽ XÓA TOÀN BỘ dữ liệu giao dịch và cài đặt của bạn. Bạn có chắc không?' : 'This will DELETE ALL your transaction data and settings. Are you sure?')) {
-        localStorage.clear();
-        location.reload();
+        if (!currentUser) return;
+        try {
+            // In a real app, you would delete the Firestore collection here.
+            // For now, we'll just clear the local state and sign out.
+            localStorage.clear();
+            await signOut(auth);
+            location.reload();
+        } catch (err) {
+            console.error("Reset error:", err);
+        }
     }
 }
 
@@ -736,7 +933,49 @@ function toggleNotifications() {
     box.style.display = box.style.display === 'none' ? 'block' : 'none';
 }
 
-function toggleNotifications() {
-    const box = document.getElementById('notiDropdown');
-    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+function toggleLoginMode(e) {
+    if(e) e.preventDefault();
+    const nameGroup = document.getElementById('nameSetupGroup');
+    const isLogin = nameGroup.style.display === 'none' || nameGroup.style.display === '';
+    const title = document.getElementById('loginPromptTitle');
+    const link = document.getElementById('toggleLoginLink');
+    const btnText = document.getElementById('loginBtnText');
+    const errorEl = document.getElementById('loginError');
+
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+
+    if (isLogin) {
+        title.textContent = currentLang === 'vi' ? 'Khởi tạo tài khoản' : 'Create Account';
+        link.textContent = currentLang === 'vi' ? 'Đã có tài khoản? Đăng nhập' : 'Already have an account? Login';
+        btnText.textContent = currentLang === 'vi' ? 'Tạo tài khoản' : 'Create Account';
+        nameGroup.style.display = 'block';
+        document.getElementById('setupName').required = true;
+    } else {
+        title.textContent = currentLang === 'vi' ? 'Đăng nhập' : 'Login';
+        link.textContent = currentLang === 'vi' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Don\'t have an account? Sign up';
+        btnText.textContent = currentLang === 'vi' ? 'Truy cập ứng dụng' : 'Enter Application';
+        nameGroup.style.display = 'none';
+        document.getElementById('setupName').required = false;
+    }
 }
+
+// --- Module Exports ---
+// Expose functions to window for HTML event handlers
+Object.assign(window, {
+    setFilterPeriod,
+    switchTab,
+    handleLoginSubmit,
+    saveSettings,
+    handleFormSubmit,
+    handleDelete,
+    openModal,
+    closeModal,
+    logoutSession,
+    hardReset,
+    toggleThemeModal,
+    closeThemeModal,
+    setThemeColor,
+    toggleNotifications,
+    toggleLoginMode
+});
